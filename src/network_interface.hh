@@ -34,34 +34,49 @@
 // and learns or replies as necessary.
 class NetworkInterface
 {
-private:
-  // Ethernet (known as hardware, network-access, or link-layer) address of the interface
-  EthernetAddress ethernet_address_;
+  private:
+    // Ethernet (known as hardware, network-access, or link-layer) address of the interface
+    EthernetAddress ethernet_address_;
 
-  // IP (known as Internet-layer or network-layer) address of the interface
-  Address ip_address_;
+    // IP (known as Internet-layer or network-layer) address of the interface
+    Address ip_address_;
 
-public:
-  // Construct a network interface with given Ethernet (network-access-layer) and IP (internet-layer)
-  // addresses
-  NetworkInterface( const EthernetAddress& ethernet_address, const Address& ip_address );
+    // outbound Ethernet frames which will be sent by the Network Interface
+    std::queue<EthernetFrame> outbound_frames_ {};
 
-  // Access queue of Ethernet frames awaiting transmission
-  std::optional<EthernetFrame> maybe_send();
+    // ARP will be stored for 30s at most, which can reduce the length of ARP table,
+    // increasing the enquiry speed.
+    const size_t ARP_DEFAULT_TTL = static_cast<size_t>(30 * 1000);
+    const size_t ARP_REQUEST_DEFAULT_TTL = static_cast<size_t>(5 * 1000);
+    using arp_t = struct {
+        EthernetAddress eth_addr; // mac address
+        size_t ttl;               // time to live
+    };
+    std::unordered_map<uint32_t /* ipv4 numeric */, arp_t> arp_table_ {};
+    std::unordered_map<uint32_t /* ipv4 numeric */, size_t /* ttl */> arp_requests_lifetime_ {};
+    std::list<std::pair<Address, InternetDatagram>> arp_datagrams_waiting_list_ {};
 
-  // Sends an IPv4 datagram, encapsulated in an Ethernet frame (if it knows the Ethernet destination
-  // address). Will need to use [ARP](\ref rfc::rfc826) to look up the Ethernet destination address
-  // for the next hop.
-  // ("Sending" is accomplished by making sure maybe_send() will release the frame when next called,
-  // but please consider the frame sent as soon as it is generated.)
-  void send_datagram( const InternetDatagram& dgram, const Address& next_hop );
+  public:
+    // Construct a network interface with given Ethernet (network-access-layer) and IP (internet-layer)
+    // addresses
+    NetworkInterface(const EthernetAddress &ethernet_address, const Address &ip_address);
 
-  // Receives an Ethernet frame and responds appropriately.
-  // If type is IPv4, returns the datagram.
-  // If type is ARP request, learn a mapping from the "sender" fields, and send an ARP reply.
-  // If type is ARP reply, learn a mapping from the "sender" fields.
-  std::optional<InternetDatagram> recv_frame( const EthernetFrame& frame );
+    // Access queue of Ethernet frames awaiting transmission
+    std::optional<EthernetFrame> maybe_send();
 
-  // Called periodically when time elapses
-  void tick( size_t ms_since_last_tick );
+    // Sends an IPv4 datagram, encapsulated in an Ethernet frame (if it knows the Ethernet destination
+    // address). Will need to use [ARP](\ref rfc::rfc826) to look up the Ethernet destination address
+    // for the next hop.
+    // ("Sending" is accomplished by making sure maybe_send() will release the frame when next called,
+    // but please consider the frame sent as soon as it is generated.)
+    void send_datagram(const InternetDatagram &dgram, const Address &next_hop);
+
+    // Receives an Ethernet frame and responds appropriately.
+    // If type is IPv4, returns the datagram.
+    // If type is ARP request, learn a mapping from the "sender" fields, and send an ARP reply.
+    // If type is ARP reply, learn a mapping from the "sender" fields.
+    std::optional<InternetDatagram> recv_frame(const EthernetFrame &frame);
+
+    // Called periodically when time elapses
+    void tick(size_t ms_since_last_tick);
 };
